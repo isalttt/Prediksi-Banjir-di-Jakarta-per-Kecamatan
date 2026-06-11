@@ -3,6 +3,8 @@ import pandas as pd
 import numpy as np
 import pickle
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 # --- Konfigurasi Halaman ---
 st.set_page_config(
@@ -123,9 +125,24 @@ def load_xgboost_resources():
 
 # --- Fungsi Ambil Data Cuaca Real-Time ---
 def get_live_weather(lat, lon):
-    url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,relative_humidity_2m,rain,wind_speed_10m&timezone=Asia%2FJakarta"
-    response = requests.get(url).json()
-    current = response['current']
+    session = requests.Session()
+    retry = Retry(
+        total=3,
+        backoff_factor=2,
+        status_forcelist=[500, 502, 503, 504]
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount("https://", adapter)
+
+    url = (
+        f"https://api.open-meteo.com/v1/forecast"
+        f"?latitude={lat}&longitude={lon}"
+        f"&current=temperature_2m,relative_humidity_2m,rain,wind_speed_10m"
+        f"&timezone=Asia%2FJakarta"
+    )
+    response = session.get(url, timeout=15, verify=True)
+    response.raise_for_status()
+    current = response.json()['current']
     return {
         'suhu': current['temperature_2m'],
         'kelembapan': current['relative_humidity_2m'],
@@ -145,7 +162,7 @@ col1, col2 = st.columns([1, 1])
 with col1:
     st.subheader("📍 Pilih Wilayah")
     pilihan_kota = st.selectbox("Pilih Kota/Wilayah:", list(DATA_WILAYAH.keys()))
-    pilihan_kecamatan = st.selectbox("Pilih Kecamatan:", KECAMATAN_PER_KOTA[pilihan_kota])  # ← filter per kota
+    pilihan_kecamatan = st.selectbox("Pilih Kecamatan:", KECAMATAN_PER_KOTA[pilihan_kota])
     
     lat, lon = DATA_WILAYAH[pilihan_kota]["lat"], DATA_WILAYAH[pilihan_kota]["lon"]
     elevasi = DATA_WILAYAH[pilihan_kota]["elevasi"]
